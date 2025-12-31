@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=ca.deobald.Kaya
+Exec=@bindir@/ca.deobald.Kaya --gapplication-service

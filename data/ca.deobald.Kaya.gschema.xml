@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="kaya-gnome">
+	<schema id="ca.deobald.Kaya" path="/ca/deobald/Kaya/">
+	</schema>
+</schemalist>

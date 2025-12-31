@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=kaya-gnome
+Exec=ca.deobald.Kaya
+Icon=ca.deobald.Kaya
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=GTK;
+StartupNotify=true
+DBusActivatable=true

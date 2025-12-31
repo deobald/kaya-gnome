@@ -1,2 +1,3 @@
 # kaya-gnome
-A desktop client for Kaya
+
+A description of this project.
