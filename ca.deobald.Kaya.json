@@ -9,6 +9,7 @@
     ],
     "command" : "ca.deobald.Kaya",
     "finish-args" : [
+    	"--own-name=ca.deobald.Kaya",
         "--share=network",
         "--share=ipc",
         "--socket=fallback-x11",
@@ -36,8 +37,8 @@
             "buildsystem" : "meson",
             "sources" : [
                 {
-                    "type" : "git",
-                    "url" : "file:///home/steven/Projects"
+                    "type": "dir",
+                    "path": "."
                 }
             ]
         }
