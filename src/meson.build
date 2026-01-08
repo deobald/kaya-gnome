@@ -1,19 +1,31 @@
 pkgdatadir = get_option('datadir') / meson.project_name()
 gnome = import('gnome')
 
-src_res = gnome.compile_resources('ca.deobald.Kaya.src',
+install_subdir(
+  'data', # contains main.ui, ca.deobald.Kaya.xml, icons, etc.
+  install_dir: pkgdatadir,
+)
+
+src_res = gnome.compile_resources(
+  'ca.deobald.Kaya.src',
   'ca.deobald.Kaya.src.gresource.xml',
   gresource_bundle: true,
   install: true,
   install_dir: pkgdatadir,
 )
 
-data_res = gnome.compile_resources('ca.deobald.Kaya.data',
+data_res = gnome.compile_resources(
+  'ca.deobald.Kaya.data',
   'ca.deobald.Kaya.data.gresource.xml',
   gresource_bundle: true,
   install: true,
   install_dir: pkgdatadir,
 )
+
+js_files = ['main.js', 'window.js']
+foreach f : js_files
+  install_data(f, install_dir: pkgdatadir)
+endforeach
 
 bin_conf = configuration_data()
 bin_conf.set('GJS', find_program('gjs').full_path())
@@ -29,5 +41,5 @@ configure_file(
   output: 'ca.deobald.Kaya',
   configuration: bin_conf,
   install: true,
-  install_dir: get_option('bindir')
+  install_dir: get_option('bindir'),
 )

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<node>
+  <interface name="ca.deobald.Kaya">
+    <method name="Show">
+      <annotation name="org.freedesktop.DBus.Method.NoReply" value="true"/>
+    </method>
+  </interface>
+</node>
+
