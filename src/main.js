@@ -22,6 +22,7 @@ import GObject from "gi://GObject";
 import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import Gtk from "gi://Gtk?version=4.0";
+import Gdk from "gi://Gdk?version=4.0";
 import Adw from "gi://Adw?version=1";
 
 import { KayaGnomeWindow } from "./window.js";
@@ -106,6 +107,11 @@ export const KayaGnomeApplication = GObject.registerClass(
         ) => {
           if (methodName === "Show") {
             this.activate();
+            const window = this.active_window;
+            if (window) {
+              // Use GDK_CURRENT_TIME to bypass focus-stealing prevention
+              window.present_with_time(Gdk.CURRENT_TIME);
+            }
           }
         },
         null,
