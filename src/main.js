@@ -70,6 +70,253 @@ export const KayaGnomeApplication = GObject.registerClass(
         aboutDialog.present(this.active_window);
       });
       this.add_action(show_about_action);
+
+      this._globalShortcutsProxy = null;
+      this._sessionHandle = null;
+    }
+
+    async _setupGlobalShortcut() {
+      try {
+        console.log("Creating XML...");
+        const interfaceXml = `
+          <node>
+            <interface name="org.freedesktop.portal.GlobalShortcuts">
+              <method name="CreateSession">
+                <arg type="a{sv}" name="options" direction="in"/>
+                <arg type="o" name="handle" direction="out"/>
+              </method>
+              <method name="BindShortcuts">
+                <arg type="o" name="session_handle" direction="in"/>
+                <arg type="aa{sv}" name="shortcuts" direction="in"/>
+                <arg type="s" name="parent_window" direction="in"/>
+                <arg type="a{sv}" name="options" direction="in"/>
+                <arg type="o" name="handle" direction="out"/>
+              </method>
+              <signal name="Activated">
+                <arg type="o" name="session_handle"/>
+                <arg type="s" name="shortcut_id"/>
+                <arg type="t" name="timestamp"/>
+                <arg type="a{sv}" name="options"/>
+              </signal>
+            </interface>
+          </node>
+        `;
+
+        console.log("Creating node from XML...");
+        const nodeInfo = Gio.DBusNodeInfo.new_for_xml(interfaceXml);
+        console.log("Creating GlobalShortcuts proxy...");
+        this._globalShortcutsProxy = await new Promise((resolve, reject) => {
+          Gio.DBusProxy.new(
+            Gio.DBus.session,
+            Gio.DBusProxyFlags.NONE,
+            nodeInfo.interfaces[0],
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.GlobalShortcuts",
+            null,
+            (source, result) => {
+              try {
+                const proxy = Gio.DBusProxy.new_finish(result);
+                resolve(proxy);
+              } catch (e) {
+                reject(e);
+              }
+            },
+          );
+        });
+
+        console.log("Registering signal with GlobalShortcuts proxy...");
+        this._globalShortcutsProxy.connectSignal(
+          "Activated",
+          (proxy, sender, params) => {
+            console.log(
+              `Activated signal received with ${params.length} parameters`,
+            );
+            params.forEach((param, index) => {
+              console.log(`Param ${index}: ${param} (type: ${typeof param})`);
+            });
+            const [sessionHandle, shortcutId, timestamp, options] = params;
+            this._handleShortcutActivated(
+              sessionHandle,
+              shortcutId,
+              timestamp,
+              options,
+            );
+          },
+        );
+
+        console.log("Creating session with GlobalShortcuts proxy...");
+        const sessionToken = `kaya_session_${Math.random().toString(36).substr(2, 9)}`;
+        const handleToken = `kaya_handle_${Math.random().toString(36).substr(2, 9)}`;
+
+        const uniqueName = Gio.DBus.session.unique_name;
+        const senderName = uniqueName.substring(1).replace(/\./g, "_");
+        const requestPath = `/org/freedesktop/portal/desktop/request/${senderName}/${handleToken}`;
+
+        console.log(`Unique name: ${uniqueName}`);
+        console.log(`Sender name: ${senderName}`);
+        console.log(`Request path: ${requestPath}`);
+
+        this._sessionHandle = await new Promise((resolve, reject) => {
+          const timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 10000, () => {
+            reject(new Error("Timeout waiting for session creation response"));
+            return GLib.SOURCE_REMOVE;
+          });
+
+          const signalId = Gio.DBus.session.signal_subscribe(
+            "org.freedesktop.portal.Desktop",
+            "org.freedesktop.portal.Request",
+            "Response",
+            requestPath,
+            null,
+            Gio.DBusSignalFlags.NONE,
+            (connection, sender, path, iface, signal, params) => {
+              console.log(`Received Response signal on path: ${path}`);
+              GLib.source_remove(timeout);
+              Gio.DBus.session.signal_unsubscribe(signalId);
+
+              const [response, results] = params.deepUnpack();
+              console.log(`Response code: ${response}`);
+              console.log(`Results: ${JSON.stringify(results)}`);
+
+              if (response === 0) {
+                const sessionHandleVariant = results["session_handle"];
+                console.log(
+                  `Session handle from response: ${sessionHandleVariant}`,
+                );
+                if (sessionHandleVariant) {
+                  const sessionHandle = sessionHandleVariant.deepUnpack
+                    ? sessionHandleVariant.deepUnpack()
+                    : sessionHandleVariant;
+                  console.log(`Unpacked session handle: ${sessionHandle}`);
+                  resolve(sessionHandle);
+                } else {
+                  reject(new Error("No session_handle in response"));
+                }
+              } else {
+                reject(
+                  new Error(`Request failed with response code: ${response}`),
+                );
+              }
+            },
+          );
+
+          console.log(`Subscribed to signal with ID: ${signalId}`);
+
+          this._globalShortcutsProxy.call(
+            "CreateSession",
+            new GLib.Variant("(a{sv})", [
+              {
+                session_handle_token: GLib.Variant.new_string(sessionToken),
+                handle_token: GLib.Variant.new_string(handleToken),
+              },
+            ]),
+            Gio.DBusCallFlags.NONE,
+            -1,
+            null,
+            (source, result) => {
+              try {
+                const returnValue = source.call_finish(result);
+                const requestHandle = returnValue
+                  .get_child_value(0)
+                  .get_string()[0];
+                console.log(`Returned request handle: ${requestHandle}`);
+              } catch (e) {
+                console.error(`CreateSession call failed: ${e}`);
+                GLib.source_remove(timeout);
+                Gio.DBus.session.signal_unsubscribe(signalId);
+                reject(e);
+              }
+            },
+          );
+        });
+
+        console.log(`Session handle: ${this._sessionHandle}`);
+
+        console.log("Calling BindShortcuts on proxy...");
+        await new Promise((resolve, reject) => {
+          this._globalShortcutsProxy.call(
+            "BindShortcuts",
+            new GLib.Variant("(oa(sa{sv})sa{sv})", [
+              this._sessionHandle,
+              [
+                [
+                  "show-window",
+                  {
+                    description: GLib.Variant.new_string("Show Kaya window"),
+                    preferred_trigger:
+                      GLib.Variant.new_string("CTRL+ALT+Return"),
+                  },
+                ],
+              ],
+              "",
+              {},
+            ]),
+            Gio.DBusCallFlags.NONE,
+            -1,
+            null,
+            (source, result) => {
+              try {
+                source.call_finish(result);
+                resolve();
+              } catch (e) {
+                reject(e);
+              }
+            },
+          );
+        });
+
+        console.log("Global shortcut Ctrl+Alt+Return registered successfully");
+      } catch (e) {
+        console.error("Failed to setup global shortcut:", e);
+      }
+    }
+
+    _handleShortcutActivated(sessionHandle, shortcutId, timestamp, options) {
+      console.log(`Shortcut activated: ${shortcutId}`);
+      console.log(`Timestamp: ${timestamp}`);
+      console.log(`Options type: ${typeof options}`);
+      console.log(`Options: ${options}`);
+      console.log(`Options stringified: ${JSON.stringify(options)}`);
+
+      this.activate();
+      const window = this.active_window;
+      if (window) {
+        let activationToken = null;
+
+        if (options && typeof options === "object") {
+          if (options.deepUnpack) {
+            const optionsDict = options.deepUnpack();
+            console.log(`Options dict: ${JSON.stringify(optionsDict)}`);
+            const tokenVariant = optionsDict["activation_token"];
+            if (tokenVariant) {
+              activationToken = tokenVariant.deepUnpack
+                ? tokenVariant.deepUnpack()
+                : tokenVariant;
+            }
+          } else {
+            console.log("Not using deepUnpack ... accessing options directly");
+            activationToken = options["activation_token"];
+            if (activationToken && activationToken.deepUnpack) {
+              activationToken = activationToken.deepUnpack();
+            }
+          }
+        }
+
+        console.log(`Activation token: ${activationToken}`);
+        if (activationToken) {
+          console.log(`Setting startup ID: ${activationToken}`);
+          window.set_startup_id(activationToken);
+        } else {
+          console.log(
+            "No activation token available, portal backend may not support it yet",
+          );
+        }
+
+        const useTimestamp = timestamp > 0 ? timestamp : Gdk.CURRENT_TIME;
+        console.log(`Presenting window with time: ${useTimestamp}`);
+        window.present_with_time(useTimestamp);
+      }
     }
 
     vfunc_activate() {
@@ -117,6 +364,8 @@ export const KayaGnomeApplication = GObject.registerClass(
         null,
         null,
       );
+
+      this._setupGlobalShortcut();
 
       return true;
     }
